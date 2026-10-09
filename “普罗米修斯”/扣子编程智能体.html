@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基于扣子(Coze)的普罗米修斯智能体</title>
+    <style>
+        :root {
+            --primary: #5c6fff; 
+            --primary-glow: #8a9aff;
+            --bg-dark: #0a0f16;
+            --panel-bg: rgba(16, 25, 38, 0.85);
+            --border: 1px solid rgba(92, 111, 255, 0.4);
+            --glow: 0 0 15px rgba(92, 111, 255, 0.4);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background: #000 url('https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=2072&auto=format&fit=crop') no-repeat center/cover;
+            color: #fff; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            display: flex; justify-content: center; align-items: center; height: 100vh;
+            backdrop-filter: blur(8px);
+            overflow: hidden;
+        }
+
+        /* 🚀 启动动画 */
+        .window-container {
+            background: var(--panel-bg); border: var(--border); box-shadow: var(--glow);
+            display: flex; flex-direction: column; backdrop-filter: blur(20px);
+            width: 4px; height: 4px; border-radius: 50%; overflow: hidden; opacity: 0;
+            animation: startUp 2s cubic-bezier(0.25, 1, 0.5, 1) forwards; animation-delay: 0.5s;
+        }
+        @keyframes startUp {
+            0% { width: 4px; height: 4px; border-radius: 50%; opacity: 0; box-shadow: 0 0 20px var(--primary); }
+            15% { width: 4px; height: 4px; border-radius: 50%; opacity: 1; box-shadow: 0 0 30px var(--primary); }
+            45% { width: 1200px; height: 4px; border-radius: 2px; opacity: 1; }
+            100% { width: 1200px; height: 750px; border-radius: 12px; opacity: 1; }
+        }
+
+        .header, .main-layout { opacity: 0; animation: fadeIn 0.8s ease forwards; animation-delay: 2.2s; }
+        @keyframes fadeIn { to { opacity: 1; } }
+
+        /* 界面布局 */
+        .header {
+            height: 50px; background: rgba(0,0,0,0.6); display: flex; align-items: center;
+            padding: 0 20px; border-bottom: var(--border); font-weight: bold; letter-spacing: 1px;
+            color: var(--primary-glow); justify-content: space-between;
+        }
+        .main-layout { display: flex; height: calc(100% - 50px); }
+        .sidebar { width: 220px; background: rgba(0,0,0,0.3); border-right: var(--border); display: flex; flex-direction: column; padding: 20px 0; }
+        .nav-btn {
+            padding: 15px 20px; background: none; border: none; color: #aaa; text-align: left; 
+            font-size: 15px; cursor: pointer; transition: 0.3s; position: relative;
+        }
+        .nav-btn:hover, .nav-btn.active {
+            color: #fff; background: rgba(92, 111, 255, 0.15); border-right: 3px solid var(--primary); 
+            text-shadow: 0 0 5px var(--primary);
+        }
+        .content { flex: 1; padding: 25px; overflow-y: auto; position: relative; scroll-behavior: smooth; }
+        .tab-pane { display: none; height: 100%; flex-direction: column; animation: fadeIn 0.3s ease; }
+        .tab-pane.active { display: flex; }
+        
+        /* 控件样式 */
+        input, textarea, select {
+            width: 100%; background: rgba(0,0,0,0.5); border: 1px solid #444; color: #fff;
+            padding: 12px; border-radius: 6px; margin-bottom: 15px; outline: none; transition: 0.3s;
+        }
+        input:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 8px rgba(92, 111, 255, 0.5); }
+        button.action-btn {
+            background: linear-gradient(45deg, #3247d4, var(--primary)); color: #fff;
+            border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-bottom: 15px;
+        }
+        button.action-btn:hover { box-shadow: var(--glow); transform: translateY(-2px); }
+        button.action-btn:disabled { background: #555; color: #888; cursor: not-allowed; box-shadow: none; transform: none; }
+        
+        /* 聊天区域 */
+        .chat-box { flex: 1; overflow-y: auto; border: 1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 15px; background: rgba(0,0,0,0.4); scroll-behavior: smooth;}
+        .msg-user { color: #fff; background: rgba(92, 111, 255, 0.2); padding: 10px 15px; border-radius: 8px; text-align: right; margin-bottom: 15px; border-right: 3px solid var(--primary); margin-left: auto; width: fit-content; max-width: 80%;}
+        .msg-ai { color: #ddd; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px; white-space: normal; margin-bottom: 15px; border-left: 3px solid #00e5ff; width: fit-content; max-width: 95%; line-height: 1.8;}
+        
+        /* 表格与动态生成区块 */
+        .ai-chunk { opacity: 0; animation: fadeInChunk 0.8s ease forwards; margin-bottom: 15px; line-height: 1.8;}
+        @keyframes fadeInChunk { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .lesson-table { width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 15px; font-size: 14px; }
+        .lesson-table th, .lesson-table td { border: 1px solid rgba(92, 111, 255, 0.4); padding: 12px; vertical-align: top; }
+        .lesson-table th { background: rgba(92, 111, 255, 0.2); color: #00e5ff; font-weight: bold; text-align: center; }
+        .lesson-table td { background: rgba(0, 0, 0, 0.3); }
+
+        .book-gallery { display: flex; gap: 10px; margin: 15px 0; overflow-x: auto;}
+        .book-img { height: 200px; border-radius: 6px; border: 1px solid #555; object-fit: contain; background: #fff;}
+        
+        /* 闯关卡片与媒体 */
+        .game-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;}
+        .card { background: rgba(255,255,255,0.05); padding: 15px; border: 1px solid #444; border-radius: 8px; cursor: pointer; text-align: center; transition: 0.2s; position: relative; line-height: 1.5;}
+        .card:hover { border-color: var(--primary); background: rgba(92, 111, 255, 0.1); }
+        .card.correct { background: rgba(0,255,0,0.15); border-color: #0f0; cursor: default; }
+        .card.wrong { background: rgba(255,0,0,0.15); border-color: #f00; cursor: default; }
+        .card.selected { border-color: #ff9800; background: rgba(255, 152, 0, 0.2); }
+        
+        .media-gallery { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px; flex: 1; display: none; }
+        .media-box { width: 100%; height: 220px; background: rgba(0,0,0,0.6); border-radius: 8px; border: 1px dashed #555; object-fit: cover; }
+        
+        .progress-container { width: 100%; height: 20px; background: #222; border-radius: 10px; overflow: hidden; margin: 20px 0; display: none; border: 1px solid #444;}
+        .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #3247d4, #00e5ff); transition: width 0.1s linear; box-shadow: 0 0 10px #00e5ff; }
+        .progress-text { text-align: center; color: var(--primary-glow); font-size: 14px; margin-bottom: 10px; display: none; }
+
+        .level-title { font-size: 24px; font-weight: bold; margin-bottom: 5px; color: #fff; text-shadow: 0 0 5px rgba(255,255,255,0.3); }
+        .level-desc { color: #aaa; margin-bottom: 20px; font-size: 14px; }
+        .badge { position: absolute; top: -10px; right: -10px; background: #ff9800; color: #fff; width: 24px; height: 24px; border-radius: 50%; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+
+        /* 🎊 撒花特效 CSS */
+        .confetti-piece { position: absolute; top: -10px; z-index: 9999; animation: fall linear forwards; pointer-events: none; }
+        @keyframes fall {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+        .blinking-cursor::after { content: '|'; animation: blink 1s step-start infinite; color: #00e5ff;}
+        @keyframes blink { 50% { opacity: 0; } }
+    </style>
+</head>
+<body>
+
+<div class="window-container">
+    <div class="header">
+        <div>🤖 扣子(Coze)智能体引擎 - 《普罗米修斯》课堂专属</div>
+        <div style="font-size: 12px; color: #00e5ff;">🟢 Agent Core Active</div>
+    </div>
+    
+    <div class="main-layout">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <button class="nav-btn active" onclick="switchTab('tab-teacher')">👨‍🏫 智能备课助手</button>
+            <button class="nav-btn" onclick="switchTab('tab-game1')">🎮 关卡一：取火</button>
+            <button class="nav-btn" onclick="switchTab('tab-game2')">🌪️ 关卡二：穿越风暴</button>
+            <button class="nav-btn" onclick="switchTab('tab-game3')">🎨 关卡三：人间点灯(生图/视频)</button>
+            <button class="nav-btn" onclick="switchTab('tab-game4')">⛓️ 关卡四：英雄获救</button>
+            <button class="nav-btn" onclick="switchTab('tab-game5')">🗣️ 关卡五：思辨升华</button>
+        </div>
+
+        <!-- 内容区 -->
+        <div class="content" id="main-content">
+            <!-- 教师备课 -->
+            <div id="tab-teacher" class="tab-pane active">
+                <div class="level-title">👨‍🏫 扣子智能备课助手</div>
+                <div class="level-desc">基于知识库内容与课标要求，一键生成定制化教学设计。</div>
+                <textarea id="teacher-prompt" rows="2">我要上一节《普罗米修斯》阅读课，请帮我生成教学设计、分层任务单、学习单。</textarea>
+                <button class="action-btn" onclick="generateLessonPlan()" id="btn-lesson">⚡ 启动扣子智能体检索并生成</button>
+                <div class="chat-box" id="teacher-output" style="display: none;"></div>
+            </div>
+
+            <!-- 第一关：太阳车取火 -->
+            <div id="tab-game1" class="tab-pane">
+                <div class="level-title">第一关：太阳车取火</div>
+                <div class="level-desc">任务：点击表达正确、坚定意义的词语，从太阳车上“取”下火种，完成字词积累！</div>
+                <div class="game-grid" id="game1-grid">
+                    <div class="card" onclick="checkWord(this, true)">驱寒取暖</div>
+                    <div class="card" onclick="checkWord(this, false)">气急败坏</div>
+                    <div class="card" onclick="checkWord(this, false)">饶恕</div>
+                    <div class="card" onclick="checkWord(this, true)">坚定</div>
+                    <div class="card" onclick="checkWord(this, true)">造福人类</div>
+                    <div class="card" onclick="checkWord(this, false)">悲惨</div>
+                </div>
+                <div id="game1-result" style="margin-top: 20px; font-size: 18px; font-weight: bold; color: #00e5ff; text-align: center;">当前收集火种：0 / 3</div>
+            </div>
+
+            <!-- 第二关：穿越风暴 -->
+            <div id="tab-game2" class="tab-pane" style="position: relative; overflow: hidden;">
+                <div class="level-title">第二关：穿越风暴</div>
+                <div class="level-desc">任务：判断下列句子对错，为火种挡风！理解普罗米修斯受罚的细节和人物品质。</div>
+                <div class="chat-box" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-size: 18px;" id="q-container">
+                    <div id="q-text" style="margin-bottom: 30px; font-weight: bold; color: #fff;">1. 普罗米修斯是因为想做天神首领，才去偷取火种的。</div>
+                    <div style="display: flex; gap: 20px;" id="q-buttons">
+                        <button class="action-btn" style="background: linear-gradient(45deg, #2e7d32, #4caf50); width: 120px;" onclick="answerQ(true)">✔️ 对</button>
+                        <button class="action-btn" style="background: linear-gradient(45deg, #c62828, #f44336); width: 120px;" onclick="answerQ(false)">❌ 错</button>
+                    </div>
+                    <div id="q-feedback" style="margin-top: 20px; height: 24px; color: #ffeb3b;"></div>
+                </div>
+            </div>
+
+            <!-- 第三关：AI生图/视频 -->
+            <div id="tab-game3" class="tab-pane">
+                <div class="level-title">第三关：人间点灯 (多模态生成)</div>
+                <div class="level-desc">底层模型：Coze 即梦图像/视频引擎 | 体验文生图、文生视频的神奇魅力。</div>
+                
+                <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="mediaType" value="image" checked style="width:auto; margin:0;"> 生成4张插画 (图片)</label>
+                    <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="mediaType" value="video" style="width:auto; margin:0;"> 生成动态画面 (视频)</label>
+                </div>
+                
+                <textarea id="media-prompt" rows="3">普罗米修斯的双手和双脚戴着铁环，被死死地锁在高高的悬崖上。他既不能动弹，也不能睡觉，日夜遭受着风吹雨淋的痛苦，史诗感插画。</textarea>
+                <button class="action-btn" onclick="startMediaGeneration()" id="btn-media">✨ 召唤智能体生成</button>
+                
+                <div class="progress-text" id="progress-text">扣子多模态大模型正在渲染中: 0%</div>
+                <div class="progress-container" id="progress-container">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+                <div class="media-gallery" id="media-gallery"></div>
+            </div>
+
+            <!-- 第四关：英雄获救 -->
+            <div id="tab-game4" class="tab-pane">
+                <div class="level-title">第四关：英雄获救</div>
+                <div class="level-desc">任务：按课文起因、经过、结果的先后顺序依次点击事件卡片，解锁结局！</div>
+                <div class="game-grid" style="grid-template-columns: 1fr;" id="sort-grid">
+                    <div class="card" data-order="2" onclick="selectCard(this)">【卡片A】普罗米修斯被死死锁在高高的悬崖上，鹫鹰每天啄食他的肝脏，受尽苦难。</div>
+                    <div class="card" data-order="3" onclick="selectCard(this)">【卡片B】大力神赫拉克勒斯经过高加索山，射死鹫鹰，砸碎锁链，救出了英雄。</div>
+                    <div class="card" data-order="1" onclick="selectCard(this)">【卡片C】普罗米修斯看到人类没有火的悲惨情景，决心冒着生命危险去天庭“盗”取火种。</div>
+                </div>
+                <div style="display:flex; justify-content: space-between; margin-top: 15px;">
+                    <div id="sort-result" style="font-weight: bold; color: #00e5ff; font-size: 18px; line-height: 40px;">请依次点击卡片...</div>
+                    <button class="action-btn" onclick="resetSort()">🔄 重置顺序</button>
+                </div>
+            </div>
+
+            <!-- 第五关：思辨 -->
+            <div id="tab-game5" class="tab-pane">
+                <div class="level-title">第五关：思想讨论会</div>
+                <div class="level-desc">底层模型：Coze 角色扮演引擎 | 与“普罗米修斯”直接对话，探讨牺牲与勇敢的意义。</div>
+                <div class="chat-box" id="debate-chat">
+                    <div class="msg-ai">【扣子智能体(普罗米修斯)】：人类的孩子，你好。我是普罗米修斯。我为了给人类带来火种，被宙斯锁在高加索山上受苦。你认为，我的牺牲值得吗？勇敢是不是就意味着一定要承受苦难？</div>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="debate-input" placeholder="输入你的看法，与普罗米修斯对话..." onkeypress="if(event.key==='Enter') sendDebate()">
+                    <button class="action-btn" onclick="sendDebate()" style="margin-bottom:0; width: 120px;">发送</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function switchTab(tabId) {
+        document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        event.target.classList.add('active');
+    }
+
+    // 👨‍🏫 教师备课模式 (分步流式渲染 - 修复目标、重难点、教法学法丢失问题)
+    function generateLessonPlan() {
+        const outBox = document.getElementById('teacher-output');
+        const btn = document.getElementById('btn-lesson');
+        const userPrompt = document.getElementById('teacher-prompt').value;
+        
+        outBox.style.display = "block";
+        outBox.innerHTML = ''; // 清空之前的内容
+        outBox.innerHTML += `<div class="msg-user">${userPrompt}</div>`;
+        const loadId = 'load-' + Date.now();
+        
+        outBox.innerHTML += `<div class="msg-ai" id="${loadId}" style="color:#ffeb3b;">⏳ 扣子智能体正在全网检索最新小学语文教材数据...</div>`;
+        btn.disabled = true;
+        outBox.scrollTop = outBox.scrollHeight;
+
+        // 定义要逐步生成的区块 (更细的切分，让流式感更强)
+        const chunk1 = `<div class="ai-chunk">✅ <b>检索完毕，已匹配统编版四年级上册四单元13课。以下为提取的教材扫描图：</b><br>
+            <div class="book-gallery">
+                <img src="./book1.png" class="book-img" onerror="this.src='https://via.placeholder.com/200x300/eee/333?text=请放入 book1.png'">
+                <img src="./book2.png" class="book-img" onerror="this.src='https://via.placeholder.com/200x300/eee/333?text=请放入 book2.png'">
+                <img src="./book3.png" class="book-img" onerror="this.src='https://via.placeholder.com/200x300/eee/333?text=请放入 book3.png'">
+            </div></div>`;
+
+        // 补回丢失的：教学目标、教学重难点、教法学法
+        const chunk2 = `<div class="ai-chunk">
+            <b style="color:#ff9800; font-size: 16px;">一、教学目标</b><br>
+            1. <b>语言运用</b>：认识本课 12 个生字，会写 14 个生字。正确流利朗读课文，读准神仙名字。<br>
+            2. <b>思维能力</b>：能按照“起因、经过、结果”的顺序，理清故事脉络，复述故事。<br>
+            3. <b>审美创造</b>：体会普罗米修斯勇敢坚毅、甘愿受苦、造福人类的伟大英雄精神。<br>
+            4. <b>文化自信</b>：阅读链接资料，对比中西方神话不同的神奇魅力。<br><br>
+            <b style="color:#ff9800; font-size: 16px;">二、教学重难点</b><br>
+            <b>【重点】</b>：按起因、经过、结果复述故事，掌握字词。<br>
+            <b>【难点】</b>：体会人物精神，借助AI智能体开展深度的思辨讨论。<br><br>
+            <b style="color:#ff9800; font-size: 16px;">三、教法学法</b><br>
+            情境创设法、任务驱动法（五重闯关）、AI智能体辅助教学法、自主合作探究法。
+            </div>`;
+
+        const chunk3 = `<div class="ai-chunk"><b style="color:#ff9800; font-size: 16px;">四、教学过程</b>
+            <table class="lesson-table">
+                <tr><th style="width:15%;">环节</th><th style="width:30%;">教师活动</th><th style="width:30%;">学生活动</th><th style="width:25%;">设计意图</th></tr>
+                <tr><td><b>环节一：创设情境，导入新课</b></td><td>出示火的图片，提问火的来源。指导读准神仙名字。</td><td>观察图片，齐读课题，跟读古希腊神仙名字。</td><td>扫清外形名字长且难读的阅读障碍。</td></tr>
+                <tr><td><b>环节二：闯关一：太阳车取火</b></td><td>利用智能体出示词语卡片任务，讲解驱寒取暖等词意。</td><td>在智能体卡片中点击带有积极意义的词语。</td><td>游戏化交互完成基础生字词教学。</td></tr>
+                <tr><td><b>环节三：闯关二与四：理清脉络</b></td><td>指导按起因、经过、结果排序，引导判断受罚细节对错。</td><td>提取关键信息，完成事件卡片拖拽和对错判断。</td><td>培养概括课文和理清文章结构的能力。</td></tr>
+                <tr><td><b>环节四：闯关三：多模态体验</b></td><td>引导提取关键词输入给智能体生图或生视频。</td><td>结合AI生成的画面感受英雄遭受的痛苦。</td><td>借助视觉生成突破想象局限，深刻体会精神。</td></tr>
+                <tr><td><b>环节五：思辨升华与拓展</b></td><td>开启思想讨论会抛出议题。出示燧人钻木取火资料。</td><td>与化身普罗米修斯的AI辩论。对比中西方神话。</td><td>训练高阶思维能力，增强文化自信。</td></tr>
+            </table></div>`;
+
+        const chunk4 = `<div class="ai-chunk"><b style="color:#ff9800; font-size: 16px;">五、分层任务单</b><br>
+            <b>【基础层】</b>：找出课文中描写普罗米修斯遭受严厉惩罚的动词（如：锁、啄食等），并摘抄。<br>
+            <b>【进阶层】</b>：对比火神赫淮斯托斯与普罗米修斯面对宙斯命令时的不同态度，体会人物特点。<br>
+            <b>【挑战层】</b>：假如你是被普罗米修斯救下的人类，看到他被锁在高加索山上，你会对他说些什么？</div>`;
+
+        const chunk5 = `<div class="ai-chunk"><b style="color:#ff9800; font-size: 16px;">六、学习单 (课前预习)</b>
+            <table class="lesson-table">
+                <tr><th>预习项目</th><th>具体内容</th><th>完成打钩</th></tr>
+                <tr><td>读通课文</td><td>将课文大声朗读3遍，读准字音，读通长句子。</td><td>[ ]</td></tr>
+                <tr><td>生字过关</td><td>圈出文中不认识的字，借助拼音读一读。</td><td>[ ]</td></tr>
+                <tr><td>资料搜集</td><td>查阅古希腊神话，了解大力神赫拉克勒斯的故事。</td><td>[ ]</td></tr>
+            </table></div>`;
+
+        // 模拟流式分步输出 (时间间隔拉长，给足观众阅读感)
+        setTimeout(() => {
+            const loader = document.getElementById(loadId);
+            loader.innerHTML = `✅ 已成功提取知识库，正在规划教学资料包...`;
+            loader.style.color = "#00e5ff";
+            
+            // 逐步塞入HTML区块，制造“从上往下涌现”的视觉效果
+            setTimeout(() => { outBox.innerHTML += chunk1; outBox.scrollTop = outBox.scrollHeight; }, 800);
+            setTimeout(() => { outBox.innerHTML += chunk2; outBox.scrollTop = outBox.scrollHeight; }, 2000);
+            setTimeout(() => { outBox.innerHTML += chunk3; outBox.scrollTop = outBox.scrollHeight; }, 3200);
+            setTimeout(() => { outBox.innerHTML += chunk4; outBox.scrollTop = outBox.scrollHeight; }, 4200);
+            setTimeout(() => { outBox.innerHTML += chunk5; outBox.scrollTop = outBox.scrollHeight; loader.style.display="none"; btn.disabled = false;}, 5200);
+        }, 1500);
+    }
+
+    // 🎊 撒花特效函数
+    function launchConfetti() {
+        const container = document.getElementById('tab-game2');
+        const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f', '#ff9800'];
+        for (let i = 0; i < 60; i++) {
+            const confetti = document.createElement('div');
+            confetti.classList.add('confetti-piece');
+            confetti.style.left = Math.random() * 100 + '%';
+            confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+            confetti.style.width = Math.random() * 8 + 4 + 'px';
+            confetti.style.height = Math.random() * 12 + 6 + 'px';
+            confetti.style.animationDuration = Math.random() * 2 + 2 + 's';
+            confetti.style.animationDelay = Math.random() * 0.5 + 's';
+            container.appendChild(confetti);
+            // 4秒后清理DOM
+            setTimeout(() => confetti.remove(), 4000);
+        }
+    }
+
+    // 🎮 第一关
+    let fireCount = 0;
+    function checkWord(element, isCorrect) {
+        if(element.classList.contains('correct') || element.classList.contains('wrong')) return;
+        if(isCorrect) {
+            element.classList.add('correct');
+            fireCount++;
+            document.getElementById('game1-result').innerText = `✅ 收集到火种！当前收集火种: ${fireCount} / 3`;
+            if(fireCount >= 3) document.getElementById('game1-result').innerHTML += `<br>🎉 恭喜通关！成功取下全部火种！`;
+        } else {
+            element.classList.add('wrong');
+            document.getElementById('game1-result').innerText = `❌ 哎呀，选错了，再想想课本里的描写。`;
+        }
+    }
+
+    // 🌪️ 第二关 (带撒花)
+    const questions = [
+        { q: "1. 普罗米修斯是因为想做天神首领，才去偷取火种的。", a: false, reason: "他看到人类没有火的悲惨情景，决心冒着危险造福人类。" },
+        { q: "2. 面对火神的劝说和宙斯的惩罚，普罗米修斯坚决不认错。", a: true, reason: "他坚定地回答：“为人类造福，有什么错？”展现了坚毅的品质。" }
+    ];
+    let currentQ = 0;
+    function answerQ(userAnswer) {
+        const feedback = document.getElementById('q-feedback');
+        if (userAnswer === questions[currentQ].a) {
+            feedback.innerHTML = `✅ 对！${questions[currentQ].reason}`; feedback.style.color = "#4caf50";
+        } else {
+            feedback.innerHTML = `❌ 错！${questions[currentQ].reason}`; feedback.style.color = "#f44336";
+        }
+        
+        const btns = document.getElementById('q-buttons').querySelectorAll('button');
+        btns.forEach(b => b.disabled = true);
+
+        setTimeout(() => {
+            currentQ++;
+            if (currentQ < questions.length) {
+                document.getElementById('q-text').innerText = questions[currentQ].q; 
+                feedback.innerHTML = "";
+                btns.forEach(b => b.disabled = false); 
+            } else {
+                document.getElementById('q-text').innerHTML = "🎉 恭喜！你成功保护了火种，穿越了风暴！";
+                document.getElementById('q-text').style.color = "#00e5ff";
+                document.getElementById('q-feedback').style.display = "none";
+                document.getElementById('q-buttons').style.display = "none"; 
+                launchConfetti(); // 触发彩纸屑特效
+            }
+        }, 2500);
+    }
+
+    // 🎨 第三关
+    function startMediaGeneration() {
+        const btn = document.getElementById('btn-media');
+        const progContainer = document.getElementById('progress-container');
+        const progBar = document.getElementById('progress-bar');
+        const progText = document.getElementById('progress-text');
+        const gallery = document.getElementById('media-gallery');
+        const type = document.querySelector('input[name="mediaType"]:checked').value;
+        
+        btn.disabled = true; gallery.style.display = 'none';
+        progContainer.style.display = 'block'; progText.style.display = 'block'; progBar.style.width = '0%';
+        
+        let progress = 0;
+        const interval = setInterval(() => {
+            progress += Math.floor(Math.random() * 6) + 2; 
+            if (progress >= 100) {
+                progress = 100; clearInterval(interval);
+                setTimeout(() => {
+                    progContainer.style.display = 'none'; progText.style.display = 'none';
+                    showMediaResult(type, gallery); btn.disabled = false;
+                }, 500);
+            }
+            progBar.style.width = progress + '%'; progText.innerText = `扣子即梦引擎渲染中: ${progress}%`;
+        }, 200);
+    }
+
+    function showMediaResult(type, container) {
+        container.style.display = 'grid';
+        if (type === 'image') {
+            container.style.gridTemplateColumns = '1fr 1fr';
+            container.innerHTML = `
+                <img class="media-box" src="./1.jpg" onerror="this.src='https://via.placeholder.com/400x300/333/00e5ff?text=请将图片命名为 1.jpg'">
+                <img class="media-box" src="./2.jpg" onerror="this.src='https://via.placeholder.com/400x300/333/00e5ff?text=请将图片命名为 2.jpg'">
+                <img class="media-box" src="./3.jpg" onerror="this.src='https://via.placeholder.com/400x300/333/00e5ff?text=请将图片命名为 3.jpg'">
+                <img class="media-box" src="./4.jpg" onerror="this.src='https://via.placeholder.com/400x300/333/00e5ff?text=请将图片命名为 4.jpg'">
+            `;
+        } else {
+            container.style.gridTemplateColumns = '1fr';
+            container.innerHTML = `
+                <video class="media-box" style="height: 350px; width: 100%;" controls autoplay loop>
+                    <source src="./1.mp4" type="video/mp4">
+                    <p style="color:red; text-align:center; padding-top:100px;">若未播放，请确保将视频命名为 1.mp4 放在同一文件夹下</p>
+                </video>
+            `;
+        }
+    }
+
+    // ⛓️ 第四关
+    let clickSequence = [];
+    const correctSequence = [1, 2, 3];
+    function selectCard(card) {
+        if(card.classList.contains('selected')) return;
+        const orderId = parseInt(card.getAttribute('data-order'));
+        clickSequence.push(orderId);
+        card.classList.add('selected');
+        const badge = document.createElement('div');
+        badge.className = 'badge'; badge.innerText = clickSequence.length; badge.style.display = "flex";
+        card.appendChild(badge);
+        if(clickSequence.length === 3) checkSequence();
+    }
+    function checkSequence() {
+        const resultText = document.getElementById('sort-result');
+        if(JSON.stringify(clickSequence) === JSON.stringify(correctSequence)) {
+            resultText.innerText = "🎉 排序正确！【起因 → 经过 → 结果】脉络梳理成功！"; resultText.style.color = "#0f0";
+        } else {
+            resultText.innerText = "❌ 顺序不对哦，请回忆课文情节，重置后再试一次。"; resultText.style.color = "#f00";
+        }
+    }
+    function resetSort() {
+        clickSequence = []; document.getElementById('sort-result').innerText = "请依次点击卡片...";
+        document.getElementById('sort-result').style.color = "#00e5ff";
+        document.querySelectorAll('#sort-grid .card').forEach(card => {
+            card.classList.remove('selected');
+            if(card.querySelector('.badge')) card.querySelector('.badge').remove();
+        });
+    }
+
+    // 🗣️ 第五关：打字机特效与深度思辨库
+    const presetReplies = [
+        "人类的孩子，谢谢你的共情。勇敢，并非不知恐惧，而是在恐惧面前，依然选择做正确的事。如果我不去取火，人类将在漫长的黑夜中永远战栗。你觉得，用我一人的苦难，换取无数生命的生生不息，这笔‘交易’值得吗？",
+        "你的想法很通透。苦难从来都不是勇敢的必需品，它只是追求光明的道路上，不得不跨越的荆棘。我从未渴望苦难，我只渴望看到人类用火光驱散寒冷时的笑容。你在生活中，有过为了别人而鼓起勇气的时刻吗？",
+        "宙斯的锁链能锁住我的身躯，却锁不住火种在人间的燎原之势。当我看到你们不仅学会了用火，更传承了不屈的精神，我就知道，一切的牺牲都是值得的。记住，真正的火焰，不仅在火把上，更在你们心里。"
+    ];
+    let replyIndex = 0;
+
+    function typeWriter(element, text, i, callback) {
+        if (i < text.length) {
+            element.innerHTML = text.substring(0, i + 1) + '<span class="blinking-cursor"></span>';
+            // 自动滚动到底部
+            const chatBox = document.getElementById('debate-chat');
+            chatBox.scrollTop = chatBox.scrollHeight;
+            setTimeout(() => typeWriter(element, text, i + 1, callback), 40); // 40ms 打字速度
+        } else {
+            element.innerHTML = text; // 打字完成移除光标
+            if(callback) callback();
+        }
+    }
+
+    function sendDebate() {
+        const input = document.getElementById('debate-input');
+        const chatBox = document.getElementById('debate-chat');
+        const text = input.value;
+        if(!text) return;
+
+        chatBox.innerHTML += `<div class="msg-user">${text}</div>`;
+        input.value = '';
+        
+        const loadId = 'debate-' + Date.now();
+        chatBox.innerHTML += `<div class="msg-ai" id="${loadId}" style="opacity: 0.6;">⏳ 扣子智能体思考中...</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+
+        setTimeout(() => {
+            const replyText = presetReplies[replyIndex % presetReplies.length];
+            replyIndex++;
+            const msgNode = document.getElementById(loadId);
+            msgNode.style.opacity = 1;
+            msgNode.innerHTML = ''; // 清空等待提示
+            
+            const prefix = "【扣子智能体(普罗米修斯)】：";
+            typeWriter(msgNode, prefix + replyText, 0);
+        }, 1200);
+    }
+</script>
+
+</body>
+</html>
